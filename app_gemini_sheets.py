@@ -210,9 +210,30 @@ def initialize_chat():
             "max_output_tokens": 1024,
         }
         
+        # セーフティ設定（バス調査は安全な内容なので緩和）
+        safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            }
+        ]
+        
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-2.0-flash-exp",
             generation_config=generation_config,
+            safety_settings=safety_settings,
             system_instruction=SYSTEM_PROMPT
         )
         
@@ -237,10 +258,31 @@ def get_gemini_response(user_message):
         
         # メッセージを送信して応答を取得
         response = st.session_state.chat.send_message(user_message)
-        return response.text
+        
+        # 応答が正常に生成されたか確認
+        if response.parts:
+            return response.text
+        else:
+            # 応答が生成されなかった場合の詳細を確認
+            finish_reason = getattr(response.candidates[0], 'finish_reason', None) if response.candidates else None
+            
+            # フィルタリングされた可能性がある場合
+            if finish_reason == 2:  # SAFETY
+                return "申し訳ございません。システムの都合により応答を生成できませんでした。別の表現で入力いただけますでしょうか。"
+            elif finish_reason == 3:  # MAX_TOKENS
+                return "応答が長すぎたため、途中で切れてしまいました。もう一度お試しください。"
+            else:
+                return f"応答の生成に失敗しました。もう一度お試しください。（理由コード: {finish_reason}）"
+    
+    except AttributeError as e:
+        # response.text が存在しない場合
+        return "申し訳ございません。応答を生成できませんでした。もう一度お試しください。"
     
     except Exception as e:
-        return f"エラーが発生しました：{str(e)}"
+        error_msg = str(e)
+        if "response.text" in error_msg or "finish_reason" in error_msg:
+            return "申し訳ございません。システムの都合により応答を生成できませんでした。別の表現でもう一度お試しください。"
+        return f"エラーが発生しました：{error_msg}"
 
 # メインUI
 st.title("バス利用に関するヒアリング調査")
@@ -284,7 +326,7 @@ if not st.session_state.survey_started:
     
     **所要時間**：約5〜10分  
     **データの取り扱い**：回答は匿名で処理され、研究目的のみに使用されます。  
-    **使用AI**：Google Gemini 2.5 Flash
+    **使用AI**：Google Gemini 2.0 Flash
     """)
     
     with st.form("user_info_form"):
