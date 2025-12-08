@@ -1,0 +1,346 @@
+import streamlit as st
+import google.generativeai as genai
+import pandas as pd
+from datetime import datetime
+import uuid
+import os
+import json
+import gspread
+from google.oauth2.service_account import Credentials
+
+# ページ設定
+st.set_page_config(
+    page_title="バス利用に関するヒアリング調査",
+    page_icon="🚌",
+    layout="centered"
+)
+
+# APIキーの設定（環境変数から読み込み）
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Google Sheets設定
+SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
+
+# セッション状態の初期化
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+    st.session_state.messages = []
+    st.session_state.user_info = {}
+    st.session_state.survey_started = False
+    st.session_state.survey_completed = False
+    st.session_state.chat = None
+    st.session_state.sheets_client = None
+    st.session_state.spreadsheet = None
+
+# システムプロンプト
+SYSTEM_PROMPT = """あなたは交通政策の研究者として、バス利用者の不満や課題についてヒアリング調査を行っています。
+
+【調査の目的】
+バス交通の改善に向けて、利用者の具体的な不満や問題点を深く理解すること
+
+【あなたの役割】
+1. 親しみやすく、話しやすい雰囲気を作る
+2. 回答者の発言を深堀りし、具体的な状況や背景を引き出す
+3. 「いつ」「どこで」「どのような状況で」といった具体性を大切にする
+4. 1回の質問は1〜2つに絞り、回答者の負担を減らす
+5. 共感を示しながら、中立的な立場を保つ
+
+【質問の流れ（柔軟に対応）】
+- まず、バス利用の頻度や目的を軽く聞く
+- 主な不満点を尋ねる
+- 具体的なエピソードや状況を深堀りする
+- 改善への期待や意見を聞く
+- 5〜8往復程度で自然に終わらせる
+
+【注意点】
+- 堅苦しくならず、会話形式で進める
+- 回答者が話したいことを優先する
+- 誘導的な質問は避ける
+- 適度なタイミングで調査を終了する（「貴重なお話をありがとうございました」など）
+
+回答は簡潔に、1〜3文程度にしてください。"""
+
+def initialize_google_sheets():
+    """Google Sheetsクライアントを初期化"""
+    try:
+        # Streamlit Secretsから認証情報を取得
+        if "gcp_service_account" in st.secrets:
+            credentials = Credentials.from_service_account_info(
+                st.secrets["gcp_service_account"],
+                scopes=SCOPES
+            )
+            client = gspread.authorize(credentials)
+            
+            # スプレッドシートを開く（URLまたはキーで指定）
+            if "spreadsheet_url" in st.secrets:
+                spreadsheet = client.open_by_url(st.secrets["spreadsheet_url"])
+            elif "spreadsheet_key" in st.secrets:
+                spreadsheet = client.open_by_key(st.secrets["spreadsheet_key"])
+            else:
+                return None, "スプレッドシートのURLまたはキーが設定されていません"
+            
+            return spreadsheet, None
+        else:
+            return None, "Google Cloud認証情報が設定されていません"
+    
+    except Exception as e:
+        return None, f"Google Sheets初期化エラー: {str(e)}"
+
+def save_to_google_sheets(spreadsheet):
+    """対話履歴をGoogle Sheetsに保存"""
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 要約シートに保存
+        try:
+            summary_sheet = spreadsheet.worksheet("summary")
+        except:
+            # シートがなければ作成
+            summary_sheet = spreadsheet.add_worksheet(title="summary", rows="1000", cols="10")
+            # ヘッダー行を追加
+            summary_sheet.append_row([
+                "session_id", "timestamp", "age_group", "usage_frequency", 
+                "message_count", "completed"
+            ])
+        
+        # 要約データを追加
+        summary_sheet.append_row([
+            st.session_state.session_id,
+            timestamp,
+            st.session_state.user_info.get("age_group", ""),
+            st.session_state.user_info.get("usage_frequency", ""),
+            len(st.session_state.messages),
+            "完了"
+        ])
+        
+        # 詳細シートに対話履歴を保存
+        try:
+            detail_sheet = spreadsheet.worksheet("details")
+        except:
+            # シートがなければ作成
+            detail_sheet = spreadsheet.add_worksheet(title="details", rows="10000", cols="10")
+            # ヘッダー行を追加
+            detail_sheet.append_row([
+                "session_id", "timestamp", "age_group", "usage_frequency",
+                "message_number", "role", "content"
+            ])
+        
+        # 各メッセージを保存
+        for i, msg in enumerate(st.session_state.messages):
+            detail_sheet.append_row([
+                st.session_state.session_id,
+                timestamp,
+                st.session_state.user_info.get("age_group", ""),
+                st.session_state.user_info.get("usage_frequency", ""),
+                i + 1,
+                msg["role"],
+                msg["content"]
+            ])
+        
+        return True, None
+    
+    except Exception as e:
+        return False, f"保存エラー: {str(e)}"
+
+def initialize_chat():
+    """Gemini チャットセッションを初期化"""
+    if not GEMINI_API_KEY:
+        return None
+    
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        
+        # モデルの設定
+        generation_config = {
+            "temperature": 0.7,
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 1024,
+        }
+        
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            generation_config=generation_config,
+            system_instruction=SYSTEM_PROMPT
+        )
+        
+        chat = model.start_chat(history=[])
+        return chat
+    
+    except Exception as e:
+        st.error(f"チャット初期化エラー：{str(e)}")
+        return None
+
+def get_gemini_response(user_message):
+    """Gemini APIを呼び出して応答を取得"""
+    if not GEMINI_API_KEY:
+        return "エラー：APIキーが設定されていません。"
+    
+    try:
+        # チャットセッションがなければ初期化
+        if st.session_state.chat is None:
+            st.session_state.chat = initialize_chat()
+            if st.session_state.chat is None:
+                return "エラー：チャットセッションを初期化できませんでした。"
+        
+        # メッセージを送信して応答を取得
+        response = st.session_state.chat.send_message(user_message)
+        return response.text
+    
+    except Exception as e:
+        return f"エラーが発生しました：{str(e)}"
+
+# メインUI
+st.title("🚌 バス利用に関するヒアリング調査")
+
+# Google Sheets初期化（初回のみ）
+if st.session_state.spreadsheet is None:
+    spreadsheet, error = initialize_google_sheets()
+    if spreadsheet:
+        st.session_state.spreadsheet = spreadsheet
+    elif error:
+        st.error(f"⚠️ Google Sheets接続エラー: {error}")
+        st.info("""
+        **セットアップが必要です：**
+        1. Google Cloud Platformでサービスアカウントを作成
+        2. Streamlit SecretsにJSON認証情報を設定
+        3. スプレッドシートをサービスアカウントと共有
+        
+        詳細は SETUP_SHEETS.md を参照してください。
+        """)
+        st.stop()
+
+# APIキーの確認
+if not GEMINI_API_KEY:
+    st.warning("⚠️ APIキーが設定されていません")
+    st.info("👉 Google AI StudioでAPIキーを取得: https://makersuite.google.com/app/apikey")
+    api_key_input = st.text_input("Gemini APIキーを入力してください：", type="password")
+    if api_key_input:
+        GEMINI_API_KEY = api_key_input
+        genai.configure(api_key=GEMINI_API_KEY)
+        st.success("✅ APIキーが設定されました！")
+        st.rerun()
+    st.stop()
+
+# 調査開始前の基本情報入力
+if not st.session_state.survey_started:
+    st.markdown("""
+    ### ご協力のお願い
+    
+    この調査は、バス交通の改善を目的とした学術研究です。
+    AIとの対話形式で、バス利用に関するあなたの率直なご意見をお聞かせください。
+    
+    **所要時間**：約5〜10分  
+    **データの取り扱い**：回答は匿名で処理され、研究目的のみに使用されます。  
+    **使用AI**：Google Gemini（無料）
+    """)
+    
+    with st.form("user_info_form"):
+        st.subheader("基本情報")
+        
+        age_group = st.selectbox(
+            "年齢層",
+            ["選択してください", "10代", "20代", "30代", "40代", "50代", "60代", "70代以上"]
+        )
+        
+        usage_frequency = st.selectbox(
+            "バスの利用頻度",
+            ["選択してください", "ほぼ毎日", "週に数回", "月に数回", "年に数回", "ほとんど利用しない"]
+        )
+        
+        submitted = st.form_submit_button("調査を開始する")
+        
+        if submitted:
+            if age_group == "選択してください" or usage_frequency == "選択してください":
+                st.error("すべての項目を選択してください。")
+            else:
+                st.session_state.user_info = {
+                    "age_group": age_group,
+                    "usage_frequency": usage_frequency
+                }
+                st.session_state.survey_started = True
+                
+                # チャットセッションを初期化
+                st.session_state.chat = initialize_chat()
+                
+                # 初回メッセージ
+                initial_context = f"""調査対象者の基本情報：
+- 年齢層：{age_group}
+- バス利用頻度：{usage_frequency}
+
+この情報を踏まえて、自然な挨拶と最初の質問をしてください。"""
+                
+                initial_message = get_gemini_response(initial_context)
+                
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": initial_message
+                })
+                st.rerun()
+
+# 調査中の対話
+elif st.session_state.survey_started and not st.session_state.survey_completed:
+    st.markdown("---")
+    
+    # 対話履歴の表示
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+    
+    # ユーザー入力
+    user_input = st.chat_input("メッセージを入力してください...")
+    
+    if user_input:
+        # ユーザーメッセージを追加
+        st.session_state.messages.append({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Gemini応答を取得
+        with st.spinner("考え中..."):
+            assistant_response = get_gemini_response(user_input)
+        
+        # アシスタントメッセージを追加
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": assistant_response
+        })
+        
+        st.rerun()
+    
+    # 調査終了ボタン
+    st.markdown("---")
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("調査を終了", type="primary"):
+            # Google Sheetsに保存
+            with st.spinner("データを保存中..."):
+                success, error = save_to_google_sheets(st.session_state.spreadsheet)
+                if success:
+                    st.session_state.survey_completed = True
+                    st.rerun()
+                else:
+                    st.error(f"保存に失敗しました: {error}")
+
+# 調査完了
+else:
+    st.success("✅ ご協力ありがとうございました！")
+    st.markdown("""
+    ### 調査完了
+    
+    お忙しい中、貴重なご意見をいただきありがとうございました。  
+    いただいた情報は、バス交通の改善に向けた研究に活用させていただきます。
+    
+    回答データはGoogle Sheetsに保存されました。
+    """)
+    
+    if st.button("新しい調査を開始"):
+        # セッションをリセット
+        for key in list(st.session_state.keys()):
+            if key not in ["spreadsheet", "sheets_client"]:  # Google Sheets接続は保持
+                del st.session_state[key]
+        st.rerun()
