@@ -237,7 +237,7 @@ def get_gemini_response(user_message):
         return f"エラーが発生しました：{str(e)}"
 
 # メインUI
-st.title("🚌 バス利用に関するヒアリング調査")
+st.title("バス利用に関するヒアリング調査")
 
 # Google Sheets初期化（初回のみ）
 if st.session_state.spreadsheet is None:
