@@ -10,8 +10,8 @@ from google.oauth2.service_account import Credentials
 
 # ページ設定
 st.set_page_config(
-    page_title="バスの利用に関するヒアリング調査",
-    #page_icon="🚌",
+    page_title="バス利用に関するヒアリング調査",
+    page_icon="🚌",
     layout="centered"
 )
 
@@ -144,7 +144,7 @@ def save_to_google_sheets(spreadsheet):
             # ヘッダー行を追加
             summary_sheet.append_row([
                 "session_id", "timestamp", "age_group", "usage_frequency", 
-                "message_count", "completed"
+                "location", "message_count", "completed"
             ])
         
         # 要約データを追加
@@ -153,6 +153,7 @@ def save_to_google_sheets(spreadsheet):
             timestamp,
             st.session_state.user_info.get("age_group", ""),
             st.session_state.user_info.get("usage_frequency", ""),
+            st.session_state.user_info.get("location", "未記入"),
             len(st.session_state.messages),
             "完了"
         ])
@@ -166,7 +167,7 @@ def save_to_google_sheets(spreadsheet):
             # ヘッダー行を追加
             detail_sheet.append_row([
                 "session_id", "timestamp", "age_group", "usage_frequency",
-                "message_number", "role", "content"
+                "location", "message_number", "role", "content"
             ])
         
         # 各メッセージを保存
@@ -176,6 +177,7 @@ def save_to_google_sheets(spreadsheet):
                 timestamp,
                 st.session_state.user_info.get("age_group", ""),
                 st.session_state.user_info.get("usage_frequency", ""),
+                st.session_state.user_info.get("location", "未記入"),
                 i + 1,
                 msg["role"],
                 msg["content"]
@@ -292,15 +294,26 @@ if not st.session_state.survey_started:
             ["選択してください", "ほぼ毎日", "週に数回", "月に数回", "年に数回", "ほとんど利用しない"]
         )
         
+        st.markdown("---")
+        st.markdown("### お住まいの地域（任意）")
+        st.caption("より地域に即した改善提案のため、差し支えなければご記入ください。")
+        
+        location_input = st.text_input(
+            "お住まいの場所",
+            placeholder="例：郵便番号（920-1192）、町名（角間町）、目印（金沢大学の近く）など",
+            help="郵便番号、町字、近くの目印（駅名・大学名・商業施設など）のいずれかで構いません。入力は任意です。"
+        )
+        
         submitted = st.form_submit_button("調査を開始する")
         
         if submitted:
             if age_group == "選択してください" or usage_frequency == "選択してください":
-                st.error("すべての項目を選択してください。")
+                st.error("年齢層とバス利用頻度を選択してください。")
             else:
                 st.session_state.user_info = {
                     "age_group": age_group,
-                    "usage_frequency": usage_frequency
+                    "usage_frequency": usage_frequency,
+                    "location": location_input if location_input else "未記入"
                 }
                 st.session_state.survey_started = True
                 
@@ -308,9 +321,10 @@ if not st.session_state.survey_started:
                 st.session_state.chat = initialize_chat()
                 
                 # 初回メッセージ
+                location_info = f"\n- お住まいの地域：{location_input}" if location_input else ""
                 initial_context = f"""調査対象者の基本情報：
 - 年齢層：{age_group}
-- バス利用頻度：{usage_frequency}
+- バス利用頻度：{usage_frequency}{location_info}
 
 この情報を踏まえて、自然な挨拶と最初の質問をしてください。"""
                 
