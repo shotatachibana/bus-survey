@@ -379,7 +379,7 @@ if not st.session_state.survey_started:
     
     **所要時間**：約5〜10分  
     **データの取り扱い**：回答は匿名で処理され、研究目的のみに使用されます。  
-    **使用AI**：Gemini 2.5 Flash-Lite
+    **使用AI**：Gemini 2.0 Flash-Lite
     """)
     
     with st.form("user_info_form"):
