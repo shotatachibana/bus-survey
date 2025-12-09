@@ -325,9 +325,17 @@ def get_gemini_response(user_message):
     
     except Exception as e:
         error_msg = str(e)
+        
+        # クォータ超過エラー（429）を検出
+        if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
+            return "申し訳ございません。現在、多くの方にご利用いただいているため、一時的に応答できない状況です。少し時間をおいてから再度お試しください。ご不便をおかけして申し訳ございません。"
+        
+        # その他のエラー
         if "response.text" in error_msg or "finish_reason" in error_msg:
             return "申し訳ございません。システムの都合により応答を生成できませんでした。別の表現でもう一度お試しください。"
-        return f"エラーが発生しました：{error_msg}"
+        
+        # 技術的なエラーメッセージは非表示にする
+        return "申し訳ございません。一時的なエラーが発生しました。もう一度お試しください。"
 
 # メインUI
 st.title("バス利用に関するヒアリング調査")
