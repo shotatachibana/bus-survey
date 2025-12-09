@@ -518,17 +518,33 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         with st.spinner("考え中..."):
             assistant_response = get_gemini_response(user_input)
         
-        st.write(f"🤖 AI応答 (最初の100文字): {assistant_response[:100]}")
+        # 【デバッグ】応答の詳細確認
+        st.write("=" * 50)
+        st.write("🤖 AI応答の詳細:")
+        st.write(f"型: {type(assistant_response)}")
+        st.write(f"長さ: {len(assistant_response)}")
+        st.write(f"最初の100文字: '{assistant_response[:100]}'")
+        st.write(f"repr形式: {repr(assistant_response[:100])}")
         
-        # エラーが発生したかチェック
-        is_error = (
-            "申し訳ございません" in assistant_response or 
-            "エラー" in assistant_response or
-            "応答できない" in assistant_response or
-            "利用いただけない" in assistant_response
-        )
+        # エラーが発生したかチェック（複数パターン）
+        error_keywords = [
+            "申し訳ございません",
+            "申し訳ありません", 
+            "エラー",
+            "応答できない",
+            "利用いただけない",
+            "quota",
+            "429"
+        ]
         
-        st.write(f"🔍 is_error = {is_error}")
+        is_error = any(keyword in assistant_response for keyword in error_keywords)
+        
+        st.write(f"🔍 エラーキーワード検出結果:")
+        for keyword in error_keywords:
+            found = keyword in assistant_response
+            st.write(f"  - '{keyword}': {found}")
+        
+        st.write(f"🔍 最終判定 is_error = {is_error}")
         
         # アシスタントメッセージを追加
         st.session_state.messages.append({
@@ -540,10 +556,16 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         if is_error:
             st.session_state.error_fallback_shown = True
             st.write("🚩 フラグを立てました！error_fallback_shown = True")
+            st.write(f"🚩 確認: st.session_state.error_fallback_shown = {st.session_state.error_fallback_shown}")
         else:
             st.write("✅ エラーではないので、フラグは立てません")
         
+        st.write("=" * 50)
         st.write("🔄 rerunします...")
+        
+        import time
+        time.sleep(1)  # デバッグ情報を見る時間を確保
+        
         st.rerun()
     
     # 調査終了ボタン
