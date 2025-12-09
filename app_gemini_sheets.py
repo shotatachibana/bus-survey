@@ -442,10 +442,6 @@ if not st.session_state.survey_started:
 elif st.session_state.survey_started and not st.session_state.survey_completed:
     st.markdown("---")
     
-    # デバッグ情報（後で削除）
-    st.sidebar.write("デバッグ情報:")
-    st.sidebar.write(f"error_fallback_shown: {st.session_state.get('error_fallback_shown', False)}")
-    
     # 対話履歴の表示
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -506,19 +502,13 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         with st.spinner("考え中..."):
             assistant_response = get_gemini_response(user_input)
         
-        # デバッグ: 応答内容を確認
-        st.sidebar.write("応答の最初の30文字:")
-        st.sidebar.write(assistant_response[:30])
-        
-        # エラーが発生したかチェック（より確実な方法）
+        # エラーが発生したかチェック
         is_error = (
             "申し訳ございません" in assistant_response or 
             "エラー" in assistant_response or
             "応答できない" in assistant_response or
             "利用いただけない" in assistant_response
         )
-        
-        st.sidebar.write(f"is_error: {is_error}")
         
         # アシスタントメッセージを追加
         st.session_state.messages.append({
@@ -529,7 +519,6 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         # エラーの場合、自由記述欄フラグを立てる
         if is_error:
             st.session_state.error_fallback_shown = True
-            st.sidebar.write("フラグを立てました!")
         
         st.rerun()
     
