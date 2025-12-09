@@ -561,10 +561,12 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
             st.write("✅ エラーではないので、フラグは立てません")
         
         st.write("=" * 50)
+        st.write(f"🔄 rerun直前の error_fallback_shown = {st.session_state.error_fallback_shown}")
         st.write("🔄 rerunします...")
         
+        # デバッグ：少し待ってからrerun
         import time
-        time.sleep(1)  # デバッグ情報を見る時間を確保
+        time.sleep(2)  # デバッグ情報を見る時間を確保
         
         st.rerun()
     
