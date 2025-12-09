@@ -276,7 +276,7 @@ def initialize_chat():
         ]
         
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash-lite",
+            model_name="gemini-2.5-flash-lite",
             generation_config=generation_config,
             safety_settings=safety_settings,
             system_instruction=SYSTEM_PROMPT
