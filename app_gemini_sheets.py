@@ -495,7 +495,7 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
                 })
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": "貴重なご意見をありがとうございました。他にもお聞かせいただけることがあれば、ぜひお書きください。"
+                    "content": "ご意見いただきありがとうございました。"
                 })
                 st.session_state.error_fallback_shown = False
                 st.success("✅ ご回答ありがとうございました！")
