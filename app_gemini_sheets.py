@@ -442,17 +442,25 @@ if not st.session_state.survey_started:
 elif st.session_state.survey_started and not st.session_state.survey_completed:
     st.markdown("---")
     
-    # デバッグ情報（後で削除）
-    st.sidebar.write("デバッグ情報:")
-    st.sidebar.write(f"error_fallback_shown: {st.session_state.get('error_fallback_shown', False)}")
+    # デバッグ情報
+    with st.expander("🔧 デバッグ情報（開発用）"):
+        st.write(f"error_fallback_shown: {st.session_state.get('error_fallback_shown', False)}")
+        st.write(f"メッセージ数: {len(st.session_state.messages)}")
+        if st.session_state.messages:
+            last_msg = st.session_state.messages[-1]
+            st.write(f"最後のメッセージ role: {last_msg['role']}")
+            st.write(f"最後のメッセージ content (最初の50文字): {last_msg['content'][:50]}")
     
     # 対話履歴の表示
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
     
-    # エラーが発生した場合、自由記述欄を表示（チャット履歴の後、入力欄の前に配置）
+    # エラーが発生した場合、自由記述欄を表示
+    st.write(f"🔍 チェック: error_fallback_shown = {st.session_state.get('error_fallback_shown', False)}")
+    
     if st.session_state.get("error_fallback_shown", False):
+        st.write("✅ 自由記述欄を表示します")
         st.markdown("---")
         st.warning("⚠️ AIとの対話が一時的にご利用いただけない状況です")
         st.markdown("""
@@ -491,11 +499,15 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
                 st.rerun()
             else:
                 st.warning("回答を入力してください")
+    else:
+        st.write("❌ 自由記述欄は表示されません（error_fallback_shown = False）")
     
     # ユーザー入力
     user_input = st.chat_input("メッセージを入力してください...")
     
     if user_input:
+        st.write("📥 ユーザー入力を受け取りました")
+        
         # ユーザーメッセージを追加
         st.session_state.messages.append({
             "role": "user",
@@ -506,8 +518,17 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         with st.spinner("考え中..."):
             assistant_response = get_gemini_response(user_input)
         
+        st.write(f"🤖 AI応答 (最初の100文字): {assistant_response[:100]}")
+        
         # エラーが発生したかチェック
-        is_error = assistant_response.startswith("申し訳ございません") or assistant_response.startswith("エラー")
+        is_error = (
+            "申し訳ございません" in assistant_response or 
+            "エラー" in assistant_response or
+            "応答できない" in assistant_response or
+            "利用いただけない" in assistant_response
+        )
+        
+        st.write(f"🔍 is_error = {is_error}")
         
         # アシスタントメッセージを追加
         st.session_state.messages.append({
@@ -518,7 +539,11 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         # エラーの場合、自由記述欄フラグを立てる
         if is_error:
             st.session_state.error_fallback_shown = True
+            st.write("🚩 フラグを立てました！error_fallback_shown = True")
+        else:
+            st.write("✅ エラーではないので、フラグは立てません")
         
+        st.write("🔄 rerunします...")
         st.rerun()
     
     # 調査終了ボタン
