@@ -471,7 +471,7 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         })
         
         # エラーの場合、自由記述欄フラグを立てる
-        if is_error and not st.session_state.get("error_fallback_shown", False):
+        if is_error:
             st.session_state.error_fallback_shown = True
         
         st.rerun()
