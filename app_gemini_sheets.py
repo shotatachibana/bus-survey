@@ -432,6 +432,21 @@ if not st.session_state.survey_started:
                 
                 initial_message = get_gemini_response(initial_context)
                 
+                # 初回メッセージでもエラーチェック
+                error_keywords = [
+                    "申し訳ございません",
+                    "申し訳ありません", 
+                    "エラー",
+                    "応答できない",
+                    "利用いただけない",
+                    "quota",
+                    "429"
+                ]
+                is_error = any(keyword in initial_message for keyword in error_keywords)
+                
+                if is_error:
+                    st.session_state.error_fallback_shown = True
+                
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": initial_message
