@@ -34,6 +34,7 @@ if "session_id" not in st.session_state:
     st.session_state.chat = None
     st.session_state.sheets_client = None
     st.session_state.spreadsheet = None
+    st.session_state.error_fallback_shown = False
 
 # システムプロンプト
 SYSTEM_PROMPT = """あなたは交通政策の研究者として、バス利用者の**所要時間のバラツキ（変動性）**と**個人の許容度の違い**についてヒアリング調査を行っています。
@@ -460,13 +461,61 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
         with st.spinner("考え中..."):
             assistant_response = get_gemini_response(user_input)
         
+        # エラーが発生したかチェック
+        is_error = assistant_response.startswith("申し訳ございません") or assistant_response.startswith("エラー")
+        
         # アシスタントメッセージを追加
         st.session_state.messages.append({
             "role": "assistant",
             "content": assistant_response
         })
         
+        # エラーの場合、自由記述欄フラグを立てる
+        if is_error and not st.session_state.get("error_fallback_shown", False):
+            st.session_state.error_fallback_shown = True
+        
         st.rerun()
+    
+    # エラーが発生した場合、自由記述欄を表示
+    if st.session_state.get("error_fallback_shown", False):
+        st.markdown("---")
+        st.warning("⚠️ AIとの対話が一時的にご利用いただけない状況です")
+        st.markdown("""
+        ### 📝 自由記述での回答をお願いします
+        
+        もしよろしければ、以下の欄に**バスの所要時間のバラツキ**について、
+        ご自由にお書きください。どのような内容でも構いません。
+        
+        **例：**
+        - 同じ区間でも日によって何分くらい時間が違うか
+        - 10回乗ったら何回くらい遅れるか、許容できるか
+        - 所要時間が読めないことで困っていること
+        - バスの定時性について感じていること
+        """)
+        
+        free_text = st.text_area(
+            "ご意見・ご感想（自由記述）",
+            height=200,
+            placeholder="例：朝のバスは10回中3回くらい遅れます。普段は25分くらいですが、遅い日は35分かかります。90%くらいの確率で時間通りなら満足ですが、今は70%くらいしか定時に来ないので困っています。",
+            key="free_text_fallback"
+        )
+        
+        if st.button("自由記述を送信", type="primary", key="submit_free_text"):
+            if free_text:
+                # 自由記述をメッセージとして追加
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": f"[自由記述] {free_text}"
+                })
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": "貴重なご意見をありがとうございました。他にもお聞かせいただけることがあれば、ぜひお書きください。"
+                })
+                st.session_state.error_fallback_shown = False
+                st.success("✅ ご回答ありがとうございました！")
+                st.rerun()
+            else:
+                st.warning("回答を入力してください")
     
     # 調査終了ボタン
     st.markdown("---")
