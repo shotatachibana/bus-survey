@@ -442,41 +442,16 @@ if not st.session_state.survey_started:
 elif st.session_state.survey_started and not st.session_state.survey_completed:
     st.markdown("---")
     
+    # デバッグ情報（後で削除）
+    st.sidebar.write("デバッグ情報:")
+    st.sidebar.write(f"error_fallback_shown: {st.session_state.get('error_fallback_shown', False)}")
+    
     # 対話履歴の表示
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
     
-    # ユーザー入力
-    user_input = st.chat_input("メッセージを入力してください...")
-    
-    if user_input:
-        # ユーザーメッセージを追加
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_input
-        })
-        
-        # Gemini応答を取得
-        with st.spinner("考え中..."):
-            assistant_response = get_gemini_response(user_input)
-        
-        # エラーが発生したかチェック
-        is_error = assistant_response.startswith("申し訳ございません") or assistant_response.startswith("エラー")
-        
-        # アシスタントメッセージを追加
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": assistant_response
-        })
-        
-        # エラーの場合、自由記述欄フラグを立てる
-        if is_error:
-            st.session_state.error_fallback_shown = True
-        
-        st.rerun()
-    
-    # エラーが発生した場合、自由記述欄を表示
+    # エラーが発生した場合、自由記述欄を表示（チャット履歴の後、入力欄の前に配置）
     if st.session_state.get("error_fallback_shown", False):
         st.markdown("---")
         st.warning("⚠️ AIとの対話が一時的にご利用いただけない状況です")
@@ -516,6 +491,35 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
                 st.rerun()
             else:
                 st.warning("回答を入力してください")
+    
+    # ユーザー入力
+    user_input = st.chat_input("メッセージを入力してください...")
+    
+    if user_input:
+        # ユーザーメッセージを追加
+        st.session_state.messages.append({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Gemini応答を取得
+        with st.spinner("考え中..."):
+            assistant_response = get_gemini_response(user_input)
+        
+        # エラーが発生したかチェック
+        is_error = assistant_response.startswith("申し訳ございません") or assistant_response.startswith("エラー")
+        
+        # アシスタントメッセージを追加
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": assistant_response
+        })
+        
+        # エラーの場合、自由記述欄フラグを立てる
+        if is_error:
+            st.session_state.error_fallback_shown = True
+        
+        st.rerun()
     
     # 調査終了ボタン
     st.markdown("---")
