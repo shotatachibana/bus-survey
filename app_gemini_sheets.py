@@ -442,6 +442,10 @@ if not st.session_state.survey_started:
 elif st.session_state.survey_started and not st.session_state.survey_completed:
     st.markdown("---")
     
+    # デバッグ情報（後で削除）
+    st.sidebar.write("デバッグ情報:")
+    st.sidebar.write(f"error_fallback_shown: {st.session_state.get('error_fallback_shown', False)}")
+    
     # 対話履歴の表示
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -503,12 +507,7 @@ elif st.session_state.survey_started and not st.session_state.survey_completed:
             assistant_response = get_gemini_response(user_input)
         
         # エラーが発生したかチェック
-        is_error = (
-            "申し訳ございません" in assistant_response or 
-            "エラー" in assistant_response or
-            "応答できない" in assistant_response or
-            "利用いただけない" in assistant_response
-        )
+        is_error = assistant_response.startswith("申し訳ございません") or assistant_response.startswith("エラー")
         
         # アシスタントメッセージを追加
         st.session_state.messages.append({
